@@ -4,7 +4,8 @@ import { MAX_AMOUNT, validateAmount } from "../src/validateAmount.js";
 
 describe("validateAmount", () => {
   test("godkänner ett vanligt belopp", () => {
-    expect(validateAmount(500)).toEqual({ ok: true, amount: 500 });
+    // MEDVETET FEL: fel förväntat belopp (5000 i stället för 500) för att visa att CI stoppar deployen
+    expect(validateAmount(500)).toEqual({ ok: true, amount: 5000 });
   });
 
   test("godkänner ören (två decimaler)", () => {
