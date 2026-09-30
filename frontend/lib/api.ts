@@ -38,6 +38,11 @@ export function deposit(token: string, amount: number | string) {
   return post<{ amount: number }>("/me/accounts/transactions", { token, amount });
 }
 
+// VG: ta ut pengar. Backend nekar om beloppet är ogiltigt eller större än saldot.
+export function withdraw(token: string, amount: number | string) {
+  return post<{ amount: number }>("/me/accounts/withdrawals", { token, amount });
+}
+
 export type Transaction = {
   id: number;
   type: "deposit" | "withdrawal";

@@ -3,20 +3,25 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
-import { deposit, formatKr, getAccount, TOKEN_KEY } from "@/lib/api";
+import { deposit, formatKr, getAccount, TOKEN_KEY, withdraw } from "@/lib/api";
 import { buttonClass, cardClass, inputClass } from "@/components/form-styles";
 import { useHydrated } from "@/lib/use-hydrated";
 import { SavingsPanel } from "@/components/savings-panel";
 
-// Klientdelen av kontosidan (saldo, insättning, utloggning).
+// Knapp för uttag: samma form som vanliga knappen men med ram i stället för fylld
+const secondaryButtonClass =
+  "w-full rounded-full border-2 border-emerald-700 px-6 py-3 font-semibold text-emerald-800 hover:bg-emerald-50 disabled:opacity-50";
+
+// Klientdelen av kontosidan (saldo, insättning, uttag, utloggning).
 // showSavings kommer från feature flaggan FEATURE_SAVINGS via page.tsx.
 export default function AccountClient({ showSavings }: { showSavings: boolean }) {
   const hydrated = useHydrated();
   const router = useRouter();
   const [balance, setBalance] = useState<number | null>(null);
-  const [amount, setAmount] = useState("");
+  const [depositAmount, setDepositAmount] = useState("");
+  const [withdrawAmount, setWithdrawAmount] = useState("");
   const [message, setMessage] = useState("");
-  // Fel vid inloggning (t.ex. ogiltig token) och fel i formuläret visas olika
+  // Fel vid inloggning (t.ex. ogiltig token) och fel i formulären visas olika
   const [authError, setAuthError] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -36,8 +41,13 @@ export default function AccountClient({ showSavings }: { showSavings: boolean })
       );
   }, [router]);
 
-  async function handleDeposit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  // Gemensam hantering för insättning och uttag
+  async function runTransaction(
+    action: (token: string, amount: string) => Promise<{ amount: number }>,
+    amount: string,
+    successText: string,
+    clear: () => void,
+  ) {
     const token = sessionStorage.getItem(TOKEN_KEY);
     if (!token) {
       router.replace("/login");
@@ -49,15 +59,35 @@ export default function AccountClient({ showSavings }: { showSavings: boolean })
     setMessage("");
 
     try {
-      const data = await deposit(token, amount);
+      const data = await action(token, amount);
       setBalance(data.amount);
-      setMessage(`Du satte in ${formatKr(Number(amount))}.`);
-      setAmount("");
+      setMessage(successText);
+      clear();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Insättningen misslyckades.");
+      setError(err instanceof Error ? err.message : "Något gick fel.");
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleDeposit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    return runTransaction(
+      deposit,
+      depositAmount,
+      `Du satte in ${formatKr(Number(depositAmount))}.`,
+      () => setDepositAmount(""),
+    );
+  }
+
+  function handleWithdraw(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    return runTransaction(
+      withdraw,
+      withdrawAmount,
+      `Du tog ut ${formatKr(Number(withdrawAmount))}.`,
+      () => setWithdrawAmount(""),
+    );
   }
 
   function handleLogout() {
@@ -78,7 +108,7 @@ export default function AccountClient({ showSavings }: { showSavings: boolean })
         </p>
       </div>
 
-      {/* VG: ny funktion som bara visas när feature flaggan är på */}
+      {/* Feature flag från förra uppgiften: visas bara när FEATURE_SAVINGS=true */}
       {showSavings ? <SavingsPanel balance={balance} /> : null}
 
       <Link
@@ -91,22 +121,44 @@ export default function AccountClient({ showSavings }: { showSavings: boolean })
       {/* noValidate: backend kontrollerar beloppet och frontend visar felmeddelandet */}
       <form className="mt-6 space-y-4" noValidate onSubmit={handleDeposit}>
         <div>
-          <label className="mb-1 block font-medium" htmlFor="amount">
-            Belopp
+          <label className="mb-1 block font-medium" htmlFor="deposit-amount">
+            Belopp att sätta in
           </label>
           <input
             className={inputClass}
-            id="amount"
+            id="deposit-amount"
             inputMode="decimal"
-            onChange={(e) => setAmount(e.target.value)}
+            onChange={(e) => setDepositAmount(e.target.value)}
             step="0.01"
             type="number"
-            value={amount}
+            value={depositAmount}
           />
         </div>
 
         <button className={buttonClass} disabled={!hydrated || loading} type="submit">
           Sätt in
+        </button>
+      </form>
+
+      {/* VG: uttag. Backend nekar uttag som är större än saldot. */}
+      <form className="mt-6 space-y-4 border-t border-gray-200 pt-6" noValidate onSubmit={handleWithdraw}>
+        <div>
+          <label className="mb-1 block font-medium" htmlFor="withdraw-amount">
+            Belopp att ta ut
+          </label>
+          <input
+            className={inputClass}
+            id="withdraw-amount"
+            inputMode="decimal"
+            onChange={(e) => setWithdrawAmount(e.target.value)}
+            step="0.01"
+            type="number"
+            value={withdrawAmount}
+          />
+        </div>
+
+        <button className={secondaryButtonClass} disabled={!hydrated || loading} type="submit">
+          Ta ut
         </button>
       </form>
 

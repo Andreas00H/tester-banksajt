@@ -3,6 +3,7 @@ import bodyParser from "body-parser";
 import cors from "cors";
 import { initDatabase, query, withTransaction } from "./db.js";
 import { validateAmount } from "./src/validateAmount.js";
+import { validateWithdrawal } from "./src/validateWithdrawal.js";
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -160,6 +161,52 @@ app.post("/me/accounts/transactions", async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Insättningen misslyckades." });
+  }
+});
+
+// VG: Ta ut pengar – Update (UPDATE) + Create (INSERT i transactions)
+// Nekas om beloppet är ogiltigt eller större än saldot. Ett nekat uttag
+// ändrar varken saldot eller historiken.
+app.post("/me/accounts/withdrawals", async (req, res) => {
+  try {
+    const account = await findAccountByToken(req.body?.token);
+
+    if (!account) {
+      return res.status(401).json({ error: "Ogiltigt engångslösenord." });
+    }
+
+    // Snabb kontroll av beloppet innan databasen låses
+    const amountCheck = validateAmount(req.body?.amount);
+    if (!amountCheck.ok) {
+      return res.status(400).json({ error: amountCheck.error });
+    }
+
+    const result = await withTransaction(async (tx) => {
+      // FOR UPDATE låser kontot, så att två uttag samtidigt inte kan övertrassera
+      const rows = await tx("SELECT amount FROM accounts WHERE id = ? FOR UPDATE", [account.id]);
+      const check = validateWithdrawal(amountCheck.amount, rows[0].amount);
+      if (!check.ok) {
+        // Inget har ändrats, så transaktionen avslutas utan ändringar
+        return { error: check.error };
+      }
+
+      await tx("UPDATE accounts SET amount = amount - ? WHERE id = ?", [check.amount, account.id]);
+      await tx("INSERT INTO transactions (account_id, type, amount) VALUES (?, 'withdrawal', ?)", [
+        account.id,
+        check.amount,
+      ]);
+      const updated = await tx("SELECT amount FROM accounts WHERE id = ?", [account.id]);
+      return { amount: Number(updated[0].amount) };
+    });
+
+    if (result.error) {
+      return res.status(400).json({ error: result.error });
+    }
+
+    res.json({ amount: result.amount });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Uttaget misslyckades." });
   }
 });
 

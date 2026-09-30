@@ -59,7 +59,7 @@ export default function TransactionsPage() {
                   <p className="text-sm text-gray-600">{formatDate(transaction.createdAt)}</p>
                 </div>
                 <p className={`font-semibold ${isDeposit ? "text-emerald-700" : "text-red-700"}`}>
-                  {isDeposit ? "+" : "−"}
+                  {isDeposit ? "+" : "-"}
                   {formatKr(transaction.amount)}
                 </p>
               </li>

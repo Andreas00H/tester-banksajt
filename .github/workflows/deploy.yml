@@ -68,6 +68,7 @@ jobs:
           node --check server.js
           node --check db.js
           node --check src/validateAmount.js
+          node --check src/validateWithdrawal.js
 
       - name: Run Vitest
         working-directory: ./backend

@@ -39,8 +39,13 @@ async function expectBalance(page: Page, text: string) {
 }
 
 async function deposit(page: Page, amount: string) {
-  await page.getByLabel("Belopp").fill(amount);
+  await page.getByLabel("Belopp att sätta in").fill(amount);
   await page.getByRole("button", { name: "Sätt in" }).click();
+}
+
+async function withdraw(page: Page, amount: string) {
+  await page.getByLabel("Belopp att ta ut").fill(amount);
+  await page.getByRole("button", { name: "Ta ut" }).click();
 }
 
 function transactionItems(page: Page) {
@@ -164,4 +169,61 @@ test("två användare ser bara sin egen historik", async ({ browser }) => {
 
   await annaContext.close();
   await boContext.close();
+});
+
+// ---------- VG: uttag med skydd mot övertrassering ----------
+
+test("VG: ett lyckat uttag minskar saldot och syns som uttag i historiken, även efter omladdning", async ({
+  page,
+}) => {
+  await registerAndLogin(page, "uttag");
+
+  await deposit(page, "500");
+  await expectBalance(page, "500 kr");
+
+  await withdraw(page, "200");
+  await expect(page.getByText("Du tog ut 200 kr.")).toBeVisible();
+  await expectBalance(page, "300 kr");
+
+  await openHistory(page);
+  await expect(transactionItems(page)).toHaveCount(2);
+  // Senaste först: uttaget överst, skilt från insättningen
+  await expect(transactionItems(page).first()).toContainText("Uttag");
+  await expect(transactionItems(page).first()).toContainText("-200 kr");
+  await expect(transactionItems(page).last()).toContainText("Insättning");
+  await expect(transactionItems(page).last()).toContainText("+500 kr");
+
+  // Efter omladdning finns samma historik och rätt saldo kvar
+  await page.reload();
+  await expect(transactionItems(page)).toHaveCount(2);
+  await expect(transactionItems(page).first()).toContainText("-200 kr");
+  await page.getByRole("link", { name: "Tillbaka till kontot" }).click();
+  await expectBalance(page, "300 kr");
+});
+
+test("VG: ett uttag större än saldot nekas och ändrar varken saldo eller historik", async ({
+  page,
+}) => {
+  await registerAndLogin(page, "nekat");
+
+  await deposit(page, "100");
+  await expectBalance(page, "100 kr");
+
+  // Mer än saldot
+  await withdraw(page, "150");
+  await expect(page.getByText("Du har inte tillräckligt med pengar på kontot.")).toBeVisible();
+  await expectBalance(page, "100 kr");
+
+  // Ogiltigt belopp
+  await withdraw(page, "0");
+  await expect(page.getByText("Beloppet måste vara större än noll.")).toBeVisible();
+  await expectBalance(page, "100 kr");
+
+  // Efter omladdning: samma saldo och bara insättningen i historiken
+  await page.reload();
+  await expectBalance(page, "100 kr");
+  await openHistory(page);
+  await expect(transactionItems(page)).toHaveCount(1);
+  await expect(transactionItems(page).first()).toContainText("Insättning");
+  await expect(page.getByText("Uttag")).not.toBeVisible();
 });
